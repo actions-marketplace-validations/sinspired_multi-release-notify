@@ -54,8 +54,8 @@ is_md = bool(re.search(
 ))
 
 if target == "Telegram":
-    # 先转义原始文本中的 HTML 特殊字符，防止 Telegram 解析报错
-    # 注意：顺序不能乱，& 必须最先转义
+    # 先转义原始文本中的 HTML 特殊字符
+    # 顺序不能乱：& 必须最先转义，否则后续转义会产生双重转义
     text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
     if not is_md:
@@ -76,17 +76,18 @@ if target == "Telegram":
         text
     )
 
-    # 列表符号
+    # 列表符号（- 和 * 开头）
     text = re.sub(r"^\s*[-*]\s+(.*)$", r"• \1", text, flags=re.MULTILINE)
 
     # [text](url) → <a href="url">text</a>
+    # 注意：此时 url 中若有 & 已被转为 &amp;，符合 Telegram HTML 要求
     text = re.sub(
         r"\[([^\]]*?)\]\((.*?)\)",
         r"<a href=\"\2\">\1</a>",
         text
     )
 
-    # 代码块去掉围栏
+    # 代码块 → <pre>
     text = re.sub(
         r"```[a-zA-Z0-9]*\n(.*?)\n```",
         r"<pre>\1</pre>",
@@ -94,7 +95,7 @@ if target == "Telegram":
         flags=re.DOTALL
     )
 
-    # 清理多余空行（Telegram 对连续空行敏感）
+    # 清理多余空行（Telegram 对连续空行比较敏感）
     text = re.sub(r"\n{3,}", "\n\n", text)
 
     print(text.strip(), end="")
@@ -114,6 +115,23 @@ except ImportError:
     text = re.sub(r"```([^`]+)```", r"<pre>\1</pre>", text, flags=re.DOTALL)
     print(f"<p>{text}</p>", end="")
 ' "$target_channel" <<< "$text"
+}
+
+# Telegram HTML 兜底清理
+# 确保最终发往 Telegram 的 HTML 中没有裸露的 &（无论来源）
+sanitize_telegram_html() {
+    local text="$1"
+    python3 -c '
+import sys, re
+text = sys.stdin.read()
+# 将未转义的 & 修复为 &amp;（已是合法实体的不重复转义）
+text = re.sub(
+    r"&(?!(amp|lt|gt|quot|apos|#\d+|#x[0-9a-fA-F]+);)",
+    "&amp;",
+    text
+)
+print(text, end="")
+' <<< "$text"
 }
 
 # Summary Section
@@ -138,7 +156,7 @@ HEREDOC
     SUMMARY_SECTION_TEXT="${SUMMARY}"$'\n'"────────────"$'\n\n'
 fi
 
-# ─── VERSION ──────────────────────────────────────────────────────────────────
+# VERSION
 if [[ -z "${VERSION}" ]]; then
     GIT_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
 
@@ -153,7 +171,7 @@ if [[ -z "${VERSION}" ]]; then
     fi
 fi
 
-# ─── Release URL ──────────────────────────────────────────────────────────────
+# Release URL
 if [[ -z "${RELEASE_URL}" ]]; then
     if [[ "${VERSION}" != "unknown" \
             && "${VERSION}" != "main" \
@@ -164,7 +182,7 @@ if [[ -z "${RELEASE_URL}" ]]; then
     fi
 fi
 
-# ─── Status ───────────────────────────────────────────────────────────────────
+# Status
 case "${STATUS,,}" in
     success|released)
         STATUS_TEXT="Released"
@@ -184,7 +202,7 @@ case "${STATUS,,}" in
         ;;
 esac
 
-# ─── Title ────────────────────────────────────────────────────────────────────
+# Title
 if [[ -n "${INPUT_TITLE:-}" ]]; then
     TITLE="${INPUT_TITLE}"
 elif [[ "${NOTIFY_TYPE}" == "failure" ]]; then
@@ -193,7 +211,7 @@ else
     TITLE="${REPOSITORY} updated to ${VERSION}"
 fi
 
-# ─── Release notes ────────────────────────────────────────────────────────────
+# Release notes
 if [[ -z "${INPUT_MESSAGE:-}" ]] && [[ -z "${RELEASE_NOTES}" ]]; then
     PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
 
@@ -214,7 +232,7 @@ fi
 
 MESSAGE="${INPUT_MESSAGE:-${RELEASE_NOTES:-No release notes provided.}}"
 
-# ─── URL decoration ───────────────────────────────────────────────────────────
+# URL decoration
 decorate_url() {
     local url="$1"
     local icon="$2"
@@ -260,7 +278,7 @@ decorate_url() {
     echo "$url"
 }
 
-# ─── Template render ──────────────────────────────────────────────────────────
+# Template render
 render_template() {
     local tpl_file="$1"
     local fmt="$2"
@@ -274,9 +292,9 @@ render_template() {
     fi
 
     case "$channel_label" in
-        Telegram)            summary_section="${SUMMARY_SECTION_TG}"   ;;
-        Email)               summary_section="${SUMMARY_SECTION_HTML}" ;;
-        Bark|Ntfy|Slack|DingTalk) summary_section="${SUMMARY_SECTION_MD}" ;;
+        Telegram)                 summary_section="${SUMMARY_SECTION_TG}"   ;;
+        Email)                    summary_section="${SUMMARY_SECTION_HTML}" ;;
+        Bark|Ntfy|Slack|DingTalk) summary_section="${SUMMARY_SECTION_MD}"  ;;
         *)
             if   [[ "$fmt" == "markdown" ]]; then summary_section="${SUMMARY_SECTION_MD}"
             elif [[ "$fmt" == "html"     ]]; then summary_section="${SUMMARY_SECTION_HTML}"
@@ -321,7 +339,7 @@ print(content, end="")
 PYEOF
 }
 
-# ─── Run apprise ──────────────────────────────────────────────────────────────
+# Run apprise
 run_apprise() {
     local label="$1"
     local body="$2"
@@ -332,7 +350,6 @@ run_apprise() {
     echo "📤 [${label}] Sending..."
 
     if apprise \
-        -vv \
         --title "${TITLE}" \
         --body "${body}" \
         --input-format "${fmt}" \
@@ -367,12 +384,18 @@ send_channel() {
     local body url
 
     body=$(render_template "$tpl_file" "$fmt" "$label")
+
+    # Telegram HTML 兜底：修复任何未转义的 & 防止 Telegram API 解析报错
+    if [[ "$label" == "Telegram" && "$fmt" == "html" ]]; then
+        body=$(sanitize_telegram_html "$body")
+    fi
+
     url=$(decorate_url "$raw_url" "$ICON_URL")
 
     run_apprise "${label}" "${body}" "${fmt}" "${url}" "true"
 }
 
-# ─── Send built-in channels ───────────────────────────────────────────────────
+# Send built-in channels
 TDIR="${ACTION_PATH}/templates"
 
 send_channel "Email"    "${INPUT_EMAIL_URL:-}"    "${INPUT_EMAIL_TEMPLATE:-}"    "html"     "${TDIR}/email.html"
@@ -382,7 +405,7 @@ send_channel "Ntfy"     "${INPUT_NTFY_URL:-}"     "${INPUT_NTFY_TEMPLATE:-}"    
 send_channel "Slack"    "${INPUT_SLACK_URL:-}"    "${INPUT_SLACK_TEMPLATE:-}"    "markdown" "${TDIR}/slack.md"
 send_channel "DingTalk" "${INPUT_DINGTALK_URL:-}" "${INPUT_DINGTALK_TEMPLATE:-}" "markdown" "${TDIR}/dingtalk.md"
 
-# ─── Generic URLs ─────────────────────────────────────────────────────────────
+# Generic URLs
 if [[ -n "${URLS_INPUT}" ]]; then
     echo "─── Generic URLs ────────────────────────────────────────────────"
 
