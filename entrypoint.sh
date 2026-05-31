@@ -295,6 +295,7 @@ render_template() {
   case "$channel_label" in
     Telegram)            summary_section="${SUMMARY_SECTION_TG}"   ;;
     Email)               summary_section="${SUMMARY_SECTION_HTML}"  ;;
+    Bark)                summary_section="${SUMMARY_SECTION_MD}"   ;; 
     Ntfy|Slack|DingTalk) summary_section="${SUMMARY_SECTION_MD}"   ;;
     *)
       # 通用 URL 回退：按 fmt 推断格式
@@ -402,8 +403,8 @@ send_channel "Telegram" \
 send_channel "Bark" \
   "${INPUT_BARK_URL:-}" \
   "${INPUT_BARK_TEMPLATE:-}" \
-  "text" \
-  "${TDIR}/bark.txt"
+  "markdown" \
+  "${TDIR}/bark.md"
 
 send_channel "Ntfy" \
   "${INPUT_NTFY_URL:-}" \
@@ -441,7 +442,7 @@ if [[ -n "${URLS_INPUT}" ]]; then
       email|mailto|mailtos)
         fmt="html" ;;
       bark*)
-        fmt="text" ;;
+        fmt="markdown" ;;
     esac
 
     # ── 根据格式选择对应的 summary 块，与具名渠道保持一致 ──────────────────────

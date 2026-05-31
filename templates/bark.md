@@ -1,0 +1,3 @@
+{SUMMARY_SECTION}{MESSAGE}
+
+[View on GitHub]({RELEASE_URL})

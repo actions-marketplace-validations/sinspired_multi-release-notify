@@ -145,7 +145,7 @@ inputs:
     default: ""
 
   bark_template:
-    description: "Path to custom Bark plain-text template"
+    description: "Path to custom Bark Markdown template"
     required: false
     default: ""
 
