@@ -145,16 +145,20 @@ PY
 
 sanitize_telegram_html() {
     local text="$1"
-    python3 - <<'PY' <<< "$text"
-import sys
+
+    TEXT="$text" python3 - <<'PY'
+import os
 import re
 
-text = sys.stdin.read()
+text = os.environ.get("TEXT", "")
+
+# 将未转义的 & 修复为 &amp;（已是合法实体的不重复转义）
 text = re.sub(
     r"&(?!(amp|lt|gt|quot|apos|#\d+|#x[0-9a-fA-F]+);)",
     "&amp;",
     text
 )
+
 print(text, end="")
 PY
 }
