@@ -48,14 +48,14 @@ import sys, re
 target = sys.argv[1]
 text = sys.stdin.read()
 
+# 检测输入是否含有 Markdown 语法
 is_md = bool(re.search(
     r"(\*\*.*?\*\*|__.*?__|#+\s|-\s|\*\s|`.*?`|\[.*?\]\(.*?\))",
     text
 ))
 
 if target == "Telegram":
-    # 先转义原始文本中的 HTML 特殊字符
-    # 顺序不能乱：& 必须最先转义，否则后续转义会产生双重转义
+    # 顺序不能乱：& 必须最先转义，否则后续替换会产生双重转义
     text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
     if not is_md:
@@ -69,25 +69,25 @@ if target == "Telegram":
     text = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", text)
     text = re.sub(r"__(.*?)__",     r"<b>\1</b>", text)
 
-    # *italic*
+    # *italic*（负向环视，避免匹配 **bold**）
     text = re.sub(
         r"(?<!\*)\*(?!\*)(.*?)(?<!\*)\*(?!\*)",
         r"<i>\1</i>",
         text
     )
 
-    # 列表符号（- 和 * 开头）
+    # 列表符号（- 和 * 开头的行）→ 项目符号
     text = re.sub(r"^\s*[-*]\s+(.*)$", r"• \1", text, flags=re.MULTILINE)
 
     # [text](url) → <a href="url">text</a>
-    # 注意：此时 url 中若有 & 已被转为 &amp;，符合 Telegram HTML 要求
+    # ↓ 修复：改用单引号原始字符串，消除 \" 在 re.sub 替换串中的转义歧义
     text = re.sub(
         r"\[([^\]]*?)\]\((.*?)\)",
-        r"<a href=\"\2\">\1</a>",
+        r'<a href="\2">\1</a>',
         text
     )
 
-    # 代码块 → <pre>
+    # 代码块 ```lang\n...\n``` → <pre>...</pre>
     text = re.sub(
         r"```[a-zA-Z0-9]*\n(.*?)\n```",
         r"<pre>\1</pre>",
@@ -95,13 +95,15 @@ if target == "Telegram":
         flags=re.DOTALL
     )
 
-    # 清理多余空行（Telegram 对连续空行比较敏感）
+    # 清理多余空行（Telegram 对连续空行较敏感）
     text = re.sub(r"\n{3,}", "\n\n", text)
 
     print(text.strip(), end="")
     sys.exit(0)
 
+# ── 非 Telegram 渠道 ──────────────────────────────────────────────────────────
 if not is_md:
+    # 纯文本：换行转 <br>
     print(text.replace("\n", "<br>"), end="")
     sys.exit(0)
 
@@ -109,6 +111,7 @@ try:
     import markdown
     print(markdown.markdown(text, extensions=["extra", "codehilite"]), end="")
 except ImportError:
+    # 降级处理：手动转换常用语法
     text = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", text)
     text = re.sub(r"\*(.*?)\*",     r"<i>\1</i>", text)
     text = re.sub(r"`([^`]+)`",     r"<code>\1</code>", text)
@@ -303,6 +306,7 @@ render_template() {
             ;;
     esac
 
+    # 将 channel_label 也传入 Python，以便对 Telegram 做 HTML 转义
     TITLE="$TITLE" \
     MESSAGE="$processed_msg" \
     SUMMARY="${SUMMARY}" \
@@ -314,26 +318,45 @@ render_template() {
     VERSION="$VERSION" \
     RELEASE_URL="$RELEASE_URL" \
     RELEASE_NOTES="$RELEASE_NOTES" \
+    CHANNEL_LABEL="$channel_label" \
     python3 - "$tpl_file" <<'PYEOF'
 import sys, os
+from html import escape as h
 
 with open(sys.argv[1], "r") as f:
     content = f.read()
 
-for placeholder, env_key in {
-    "{TITLE}":           "TITLE",
-    "{MESSAGE}":         "MESSAGE",
-    "{SUMMARY}":         "SUMMARY",
-    "{SUMMARY_SECTION}": "SUMMARY_SECTION",
-    "{STATUS}":          "STATUS",
-    "{STATUS_TEXT}":     "STATUS_TEXT",
-    "{REPOSITORY}":      "REPOSITORY",
-    "{AUTHOR}":          "AUTHOR",
-    "{VERSION}":         "VERSION",
-    "{RELEASE_URL}":     "RELEASE_URL",
-    "{RELEASE_NOTES}":   "RELEASE_NOTES",
-}.items():
-    content = content.replace(placeholder, os.environ.get(env_key, ""))
+# 获取当前渠道，决定是否对原始文本做 HTML 转义
+channel = os.environ.get("CHANNEL_LABEL", "")
+is_tg_html = (channel == "Telegram")
+
+def safe(val, already_html=False):
+    """
+    对 Telegram HTML 模板中的裸文本变量做 HTML 转义；
+    已经是 HTML 的变量（MESSAGE、SUMMARY_SECTION）直接透传。
+    """
+    if is_tg_html and not already_html:
+        return h(val)   # & → &amp;  < → &lt;  > → &gt;
+    return val
+
+# (占位符, 环境变量名, 是否已经是合法HTML)
+substitutions = [
+    ("{TITLE}",           "TITLE",           False),  # 裸文本 → 需转义
+    ("{MESSAGE}",         "MESSAGE",         True),   # 已是 Telegram HTML → 透传
+    ("{SUMMARY}",         "SUMMARY",         False),
+    ("{SUMMARY_SECTION}", "SUMMARY_SECTION", True),   # 已是 Telegram HTML → 透传
+    ("{STATUS}",          "STATUS",          False),
+    ("{STATUS_TEXT}",     "STATUS_TEXT",     False),
+    ("{REPOSITORY}",      "REPOSITORY",      False),
+    ("{AUTHOR}",          "AUTHOR",          False),
+    ("{VERSION}",         "VERSION",         False),
+    ("{RELEASE_URL}",     "RELEASE_URL",     False),  # URL 中 & 也需 → &amp;
+    ("{RELEASE_NOTES}",   "RELEASE_NOTES",   False),  # 裸 Markdown → 需转义
+]
+
+for placeholder, env_key, already_html in substitutions:
+    val = os.environ.get(env_key, "")
+    content = content.replace(placeholder, safe(val, already_html))
 
 print(content, end="")
 PYEOF
