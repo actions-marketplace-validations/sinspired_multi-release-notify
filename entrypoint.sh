@@ -25,6 +25,10 @@ GITHUB_SERVER_URL="${GITHUB_SERVER_URL:-https://github.com}"
 # 可选摘要，显示于 Release Notes 上方
 SUMMARY="${INPUT_SUMMARY:-}"
 
+TITLE_EMOJI="🚀"
+SUMMARY_LABEL="📋 Summary"
+NOTES_LABEL="📝 Release Notes"
+
 # Guard
 if [[ -z "${URLS_INPUT}" \
         && -z "${INPUT_EMAIL_URL:-}" \
@@ -172,7 +176,7 @@ build_summary_section_html() {
 
     cat <<HEREDOC
 <div class="summary-callout">
-  <div class="summary-callout-label">📋 Summary</div>
+  <div class="summary-callout-label">${SUMMARY_LABEL}</div>
   <div class="summary-callout-body">${summary_html}</div>
 </div>
 HEREDOC
@@ -284,7 +288,7 @@ if [[ -n "${INPUT_TITLE:-}" ]]; then
 else
     case "${NOTIFY_TYPE}" in
         success)
-            TITLE="🚀 ${REPOSITORY} updated to ${VERSION}"
+            TITLE="${TITLE_EMOJI} ${REPOSITORY} updated to ${VERSION}"
             ;;
         failure)
             TITLE="❌ ${REPOSITORY} updated to ${VERSION} — failed"
