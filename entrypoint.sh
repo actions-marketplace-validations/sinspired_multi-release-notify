@@ -184,7 +184,7 @@ build_summary_section_telegram() {
 
     local summary_tg
     summary_tg=$(convert_markdown "telegram" "$summary")
-    printf '%s\n\n' "$summary_tg"
+    printf '%s\n<b></b>\n\n' "$summary_tg"
 }
 
 detect_template_kind() {
