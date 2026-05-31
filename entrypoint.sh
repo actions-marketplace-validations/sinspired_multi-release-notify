@@ -55,7 +55,21 @@ HEREDOC
 )
 
 # Telegram HTML：加粗摘要 + 空行分隔
-SUMMARY_SECTION_TG="<b>${SUMMARY}</b>"$'\n\n'
+if [[ -n "${SUMMARY}" ]]; then
+    SUMMARY_TG=$(convert_markdown "Telegram" "${SUMMARY}")
+    SUMMARY_SECTION_TG="${SUMMARY_TG}"$'\n\n'
+
+    # 其他渠道保持不变
+    SUMMARY_SECTION_HTML=$(cat <<HEREDOC
+<div class="summary-callout">
+  <div class="summary-callout-label">📋 Summary</div>
+  <div class="summary-callout-body">${SUMMARY}</div>
+</div>
+HEREDOC
+)
+    SUMMARY_SECTION_MD="**${SUMMARY}**"$'\n\n'"---"$'\n\n'
+    SUMMARY_SECTION_TEXT="${SUMMARY}"$'\n'"────────────"$'\n\n'
+fi
 
 # Markdown（Ntfy / Slack / DingTalk）：加粗 + 分割线
 SUMMARY_SECTION_MD="**${SUMMARY}**"$'\n\n'"---"$'\n\n'
