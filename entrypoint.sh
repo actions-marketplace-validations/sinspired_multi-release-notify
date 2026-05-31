@@ -332,6 +332,7 @@ run_apprise() {
     echo "📤 [${label}] Sending..."
 
     if apprise \
+        -vv \
         --title "${TITLE}" \
         --body "${body}" \
         --input-format "${fmt}" \
