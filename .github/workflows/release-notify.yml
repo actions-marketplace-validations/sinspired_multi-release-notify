@@ -32,24 +32,7 @@ jobs:
                   # release 事件时取 tag_name；手动触发时取 input；都为空则脚本自动检测
                   summary: "增加了多渠道发布通知支持，包括 Slack、Telegram、Email、Bark、Ntfy 和 DingTalk。[详细信息](${{ github.event.release.html_url }})"
                   # release body 有内容则直接用；为空则脚本自动从 git log 生成
-                #   release_notes: ${{ github.event.release.body }}
-                  release_notes: |
-                    ### 🐛 Bug 修复
-                    * defddc5891cba6ce8406030dc4b1acaf5a5de637: fix: 修复docker用户权限错误
-                    ### 🔧 重构维护
-                    * e8f7db3d37eb2146c8a0e2bdde6015718d7be513: chore: 自动生成release notes
-                    * 437934e4e85dc8e80b57477518ba5838c4bba5fa: chore: 更新发布通知摘要
-                    * c128ba9f8a4020a3d793582245f94aee9f02376f: chore: update readme
-                    * f4c0dbc1113c77d22e8d17c9300ab97d573866fb: chore: update ignore files
-                    * e4539cb073369ee9599de5fda888dad9a3c91828: CI: 添加更新Docker Hub描述的GitHub工作流
-
-                    ---
-                    💡 **完整变更日志**: [v2.5.0...v2.5.1](https://github.com/sinspired/subs-check-pro/compare/v2.5.0...v2.5.1)
-                    - 🐳 Docker 镜像已发布 `docker pull sinspired/subs-check-pro:latest`
-                    - 💬 反馈方式
-                    - 👥 Telegram 群组：[subs-check性能版](https://t.me/subs_check_pro)
-                    - 📣 Telegram 频道：[关注频道](https://t.me/sinspired_ai)
-
+                  release_notes: ${{ github.event.release.body }}
 
                   author: ${{ github.event.release.author.login || github.actor }}
 
