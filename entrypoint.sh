@@ -37,105 +37,182 @@ if [[ -z "${URLS_INPUT}" \
     exit 1
 fi
 
-# ─── Markdown convert ─────────────────────────────────────────────────────────
+# ─── Markdown / HTML convert ──────────────────────────────────────────────────
 convert_markdown() {
-    local target_channel="$1"
+    local mode="$1"
     local text="$2"
 
-    TARGET_CHANNEL="$target_channel" TEXT="$text" python3 - <<'PY'
+    MODE="$mode" TEXT="$text" python3 - <<'PY'
 import os
 import re
 import sys
 
-target = os.environ.get("TARGET_CHANNEL", "")
+mode = os.environ.get("MODE", "")
 text = os.environ.get("TEXT", "")
 
-# 检测输入是否含有 Markdown 语法
-is_md = bool(re.search(
-    r"(\*\*.*?\*\*|__.*?__|#+\s|-\s|\*\s|`.*?`|\[.*?\]\(.*?\))",
-    text
-))
+def is_markdown(s: str) -> bool:
+    return bool(re.search(
+        r"(\*\*.*?\*\*|__.*?__|#+\s|-\s|\*\s|`.*?`|\[.*?\]\(.*?\))",
+        s
+    ))
 
-if target == "Telegram":
-    # 顺序不能乱：& 必须最先转义，否则后续替换会产生双重转义
-    text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+def escape_plain(s: str) -> str:
+    return (
+        s.replace("&", "&amp;")
+         .replace("<", "&lt;")
+         .replace(">", "&gt;")
+    )
 
-    if not is_md:
-        print(text.strip(), end="")
-        sys.exit(0)
+def md_to_telegram(s: str) -> str:
+    md = is_markdown(s)
+
+    # Telegram HTML 必须先转义原始文本
+    s = escape_plain(s)
+
+    if not md:
+        return s.strip()
 
     # 标题 → <b>
-    text = re.sub(r"^(#{1,6})\s+(.*)$", r"<b>\2</b>", text, flags=re.MULTILINE)
+    s = re.sub(r"^(#{1,6})\s+(.*)$", r"<b>\2</b>", s, flags=re.MULTILINE)
 
     # **bold** / __bold__
-    text = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", text)
-    text = re.sub(r"__(.*?)__",     r"<b>\1</b>", text)
+    s = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", s)
+    s = re.sub(r"__(.*?)__",     r"<b>\1</b>", s)
 
-    # *italic*（负向环视，避免匹配 **bold**）
-    text = re.sub(
-        r"(?<!\*)\*(?!\*)(.*?)(?<!\*)\*(?!\*)",
-        r"<i>\1</i>",
-        text
-    )
+    # *italic*（避免匹配 **bold**）
+    s = re.sub(r"(?<!\*)\*(?!\*)(.*?)(?<!\*)\*(?!\*)", r"<i>\1</i>", s)
 
-    # 列表符号（- 和 * 开头的行）→ 项目符号
-    text = re.sub(r"^\s*[-*]\s+(.*)$", r"• \1", text, flags=re.MULTILINE)
+    # 列表
+    s = re.sub(r"^\s*[-*]\s+(.*)$", r"• \1", s, flags=re.MULTILINE)
 
     # [text](url) → <a href="url">text</a>
-    text = re.sub(
-        r"\[([^\]]*?)\]\((.*?)\)",
-        r'<a href="\2">\1</a>',
-        text
-    )
+    s = re.sub(r"\[([^\]]*?)\]\((.*?)\)", r'<a href="\2">\1</a>', s)
 
     # 代码块 ```lang\n...\n``` → <pre>...</pre>
-    text = re.sub(
-        r"```[a-zA-Z0-9]*\n(.*?)\n```",
-        r"<pre>\1</pre>",
-        text,
-        flags=re.DOTALL
-    )
+    def codeblock(m):
+        code = (
+            m.group(1)
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+        )
+        return f"<pre>{code}</pre>"
 
-    # 清理多余空行（Telegram 对连续空行较敏感）
-    text = re.sub(r"\n{3,}", "\n\n", text)
+    s = re.sub(r"```[a-zA-Z0-9]*\n(.*?)\n```", codeblock, s, flags=re.DOTALL)
 
-    print(text.strip(), end="")
-    sys.exit(0)
+    # 清理多余空行
+    s = re.sub(r"\n{3,}", "\n\n", s)
 
-# ── 非 Telegram 渠道 ──────────────────────────────────────────────────────────
-if not is_md:
-    # 纯文本：换行转 <br>
-    print(text.replace("\n", "<br>"), end="")
-    sys.exit(0)
+    return s.strip()
 
-try:
-    import markdown
-    print(markdown.markdown(text, extensions=["extra", "codehilite"]), end="")
-except ImportError:
-    # 降级处理：手动转换常用语法
-    text = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", text)
-    text = re.sub(r"\*(.*?)\*",     r"<i>\1</i>", text)
-    text = re.sub(r"`([^`]+)`",      r"<code>\1</code>", text)
-    text = re.sub(r"```([^`]+)```",  r"<pre>\1</pre>", text, flags=re.DOTALL)
-    print(f"<p>{text}</p>", end="")
+def md_to_html(s: str) -> str:
+    if not is_markdown(s):
+        return escape_plain(s).replace("\n", "<br>")
+
+    try:
+        import markdown
+        return markdown.markdown(s, extensions=["extra", "codehilite"])
+    except Exception:
+        # 降级处理
+        s = escape_plain(s)
+        s = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", s)
+        s = re.sub(r"__(.*?)__",     r"<b>\1</b>", s)
+        s = re.sub(r"\*(.*?)\*",     r"<i>\1</i>", s)
+        s = re.sub(r"`([^`]+)`",      r"<code>\1</code>", s)
+
+        def codeblock(m):
+            code = (
+                m.group(1)
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+            )
+            return f"<pre>{code}</pre>"
+
+        s = re.sub(r"```(.*?)```", codeblock, s, flags=re.DOTALL)
+        return f"<p>{s}</p>"
+
+if mode == "telegram":
+    print(md_to_telegram(text), end="")
+elif mode == "html":
+    print(md_to_html(text), end="")
+elif mode == "plain":
+    print(escape_plain(text), end="")
+else:
+    print(text, end="")
 PY
 }
 
-# Telegram HTML 兜底清理
-# 确保最终发往 Telegram 的 HTML 中没有裸露的 &（无论来源）
 sanitize_telegram_html() {
     local text="$1"
-    python3 -c '
-import sys, re
+    python3 - <<'PY' <<< "$text"
+import sys
+import re
+
 text = sys.stdin.read()
-# 将未转义的 & 修复为 &amp;（已是合法实体的不重复转义）
 text = re.sub(
     r"&(?!(amp|lt|gt|quot|apos|#\d+|#x[0-9a-fA-F]+);)",
     "&amp;",
     text
 )
 print(text, end="")
-' <<< "$text"
+PY
+}
+
+build_summary_section_html() {
+    local summary="$1"
+    [[ -z "$summary" ]] && return 0
+
+    local summary_html
+    summary_html=$(convert_markdown "html" "$summary")
+
+    cat <<HEREDOC
+<div class="summary-callout">
+  <div class="summary-callout-label">📋 Summary</div>
+  <div class="summary-callout-body">${summary_html}</div>
+</div>
+HEREDOC
+}
+
+build_summary_section_telegram() {
+    local summary="$1"
+    [[ -z "$summary" ]] && return 0
+
+    local summary_tg
+    summary_tg=$(convert_markdown "telegram" "$summary")
+    printf '%s\n\n' "$summary_tg"
+}
+
+detect_template_kind() {
+    local tpl_file="$1"
+
+    if [[ ! -f "$tpl_file" ]]; then
+        echo "text"
+        return 0
+    fi
+
+    # 显式标记优先
+    if grep -qiE '<!--[[:space:]]*apprise-template:[[:space:]]*telegram[[:space:]]*-->' "$tpl_file"; then
+        echo "telegram_html"
+        return 0
+    fi
+
+    if grep -qiE '<!--[[:space:]]*apprise-template:[[:space:]]*html[[:space:]]*-->' "$tpl_file"; then
+        echo "html_doc"
+        return 0
+    fi
+
+    case "${tpl_file##*.}" in
+        md|markdown) echo "markdown"; return 0 ;;
+        txt|text)    echo "text";     return 0 ;;
+    esac
+
+    # 依据模板内容判断
+    if grep -qiE '<!doctype[[:space:]]+html|<html[[:space:]>]' "$tpl_file"; then
+        echo "html_doc"
+    else
+        echo "telegram_html"
+    fi
 }
 
 # Summary Section
@@ -145,18 +222,9 @@ SUMMARY_SECTION_TG=""
 SUMMARY_SECTION_TEXT=""
 
 if [[ -n "${SUMMARY}" ]]; then
-    SUMMARY_TG=$(convert_markdown "Telegram" "${SUMMARY}")
-    SUMMARY_SECTION_TG="${SUMMARY_TG}"$'\n\n'
-
-    SUMMARY_SECTION_HTML=$(cat <<HEREDOC
-<div class="summary-callout">
-  <div class="summary-callout-label">📋 Summary</div>
-  <div class="summary-callout-body">${SUMMARY}</div>
-</div>
-HEREDOC
-)
-
-    SUMMARY_SECTION_MD="**${SUMMARY}**"$'\n\n'"---"$'\n\n'
+    SUMMARY_SECTION_HTML=$(build_summary_section_html "${SUMMARY}")
+    SUMMARY_SECTION_TG=$(build_summary_section_telegram "${SUMMARY}")
+    SUMMARY_SECTION_MD="${SUMMARY}"$'\n\n'"---"$'\n\n'
     SUMMARY_SECTION_TEXT="${SUMMARY}"$'\n'"────────────"$'\n\n'
 fi
 
@@ -287,28 +355,33 @@ decorate_url() {
 render_template() {
     local tpl_file="$1"
     local fmt="$2"
-    local channel_label="$3"
 
-    local processed_msg="$MESSAGE"
+    local template_kind
+    template_kind=$(detect_template_kind "$tpl_file")
+
+    local processed_msg=""
     local summary_section=""
 
-    if [[ "$fmt" == "html" ]]; then
-        processed_msg=$(convert_markdown "$channel_label" "$MESSAGE")
-    fi
-
-    case "$channel_label" in
-        Telegram)                 summary_section="${SUMMARY_SECTION_TG}"   ;;
-        Email)                    summary_section="${SUMMARY_SECTION_HTML}" ;;
-        Bark|Ntfy|Slack|DingTalk) summary_section="${SUMMARY_SECTION_MD}"  ;;
+    case "$template_kind" in
+        html_doc)
+            processed_msg=$(convert_markdown "html" "$MESSAGE")
+            summary_section="${SUMMARY_SECTION_HTML}"
+            ;;
+        telegram_html)
+            # Telegram 的 Release Notes 放进 <pre>，这里只保留纯文本并做 HTML 兜底转义
+            processed_msg=$(convert_markdown "plain" "$MESSAGE")
+            summary_section="${SUMMARY_SECTION_TG}"
+            ;;
+        markdown)
+            processed_msg="$MESSAGE"
+            summary_section="${SUMMARY_SECTION_MD}"
+            ;;
         *)
-            if   [[ "$fmt" == "markdown" ]]; then summary_section="${SUMMARY_SECTION_MD}"
-            elif [[ "$fmt" == "html"     ]]; then summary_section="${SUMMARY_SECTION_HTML}"
-            else                                  summary_section="${SUMMARY_SECTION_TEXT}"
-            fi
+            processed_msg="$MESSAGE"
+            summary_section="${SUMMARY_SECTION_TEXT}"
             ;;
     esac
 
-    # 将 channel_label 也传入 Python，以便对 Telegram 做 HTML 转义
     TITLE="$TITLE" \
     MESSAGE="$processed_msg" \
     SUMMARY="${SUMMARY}" \
@@ -320,40 +393,35 @@ render_template() {
     VERSION="$VERSION" \
     RELEASE_URL="$RELEASE_URL" \
     RELEASE_NOTES="$RELEASE_NOTES" \
-    CHANNEL_LABEL="$channel_label" \
+    TEMPLATE_KIND="$template_kind" \
     python3 - "$tpl_file" <<'PYEOF'
-import sys, os
+import sys
+import os
 from html import escape as h
 
-with open(sys.argv[1], "r") as f:
+with open(sys.argv[1], "r", encoding="utf-8") as f:
     content = f.read()
 
-# 获取当前渠道，决定是否对原始文本做 HTML 转义
-channel = os.environ.get("CHANNEL_LABEL", "")
-is_tg_html = (channel == "Telegram")
+kind = os.environ.get("TEMPLATE_KIND", "")
 
 def safe(val, already_html=False):
-    """
-    对 Telegram HTML 模板中的裸文本变量做 HTML 转义；
-    已经是 HTML 的变量（MESSAGE、SUMMARY_SECTION）直接透传。
-    """
-    if is_tg_html and not already_html:
-        return h(val)   # & → &amp;  < → &lt;  > → &gt;
+    # HTML 模板中的裸文本变量需要转义；已经是 HTML 的变量直接透传
+    if kind in ("html_doc", "telegram_html") and not already_html:
+        return h(val, quote=False)
     return val
 
-# (占位符, 环境变量名, 是否已经是合法HTML)
 substitutions = [
-    ("{TITLE}",           "TITLE",           False),  # 裸文本 → 需转义
-    ("{MESSAGE}",         "MESSAGE",         True),   # 已是 Telegram HTML → 透传
+    ("{TITLE}",           "TITLE",           False),
+    ("{MESSAGE}",         "MESSAGE",         True),
     ("{SUMMARY}",         "SUMMARY",         False),
-    ("{SUMMARY_SECTION}", "SUMMARY_SECTION", True),   # 已是 Telegram HTML → 透传
+    ("{SUMMARY_SECTION}",  "SUMMARY_SECTION", True),
     ("{STATUS}",          "STATUS",          False),
     ("{STATUS_TEXT}",     "STATUS_TEXT",     False),
     ("{REPOSITORY}",      "REPOSITORY",      False),
     ("{AUTHOR}",          "AUTHOR",          False),
     ("{VERSION}",         "VERSION",         False),
-    ("{RELEASE_URL}",     "RELEASE_URL",     False),  # URL 中 & 也需 → &amp;
-    ("{RELEASE_NOTES}",   "RELEASE_NOTES",   False),  # 裸 Markdown → 需转义
+    ("{RELEASE_URL}",     "RELEASE_URL",     False),
+    ("{RELEASE_NOTES}",   "RELEASE_NOTES",   False),
 ]
 
 for placeholder, env_key, already_html in substitutions:
@@ -408,8 +476,7 @@ send_channel() {
     fi
 
     local body url
-
-    body=$(render_template "$tpl_file" "$fmt" "$label")
+    body=$(render_template "$tpl_file" "$fmt")
 
     # Telegram HTML 兜底：修复任何未转义的 & 防止 Telegram API 解析报错
     if [[ "$label" == "Telegram" && "$fmt" == "html" ]]; then
@@ -435,7 +502,7 @@ send_channel "DingTalk" "${INPUT_DINGTALK_URL:-}" "${INPUT_DINGTALK_TEMPLATE:-}"
 if [[ -n "${URLS_INPUT}" ]]; then
     echo "─── Generic URLs ────────────────────────────────────────────────"
 
-    while IFS= read -r raw_url; do
+    while IFS= read -r raw_url || [[ -n "$raw_url" ]]; do
         raw_url=$(echo "$raw_url" | tr -d ' ,')
         [[ -z "$raw_url" ]] && continue
 
@@ -445,13 +512,15 @@ if [[ -n "${URLS_INPUT}" ]]; then
         fmt="text"
         case "${local_scheme,,}" in
             ntfy*|slack*|dingtalk*|mattermost*|matrix*|rocket*|discord*|telegram|bark*)
-                fmt="markdown" ;;
+                fmt="markdown"
+                ;;
             email|mailto|mailtos)
-                fmt="html" ;;
+                fmt="html"
+                ;;
         esac
 
         if [[ "$fmt" == "html" ]]; then
-            formatted_message=$(convert_markdown "Email" "$MESSAGE")
+            formatted_message=$(convert_markdown "html" "$MESSAGE")
             generic_body="${SUMMARY_SECTION_HTML}${formatted_message}<br><br><a href=\"${RELEASE_URL}\">${RELEASE_URL}</a>"
         elif [[ "$fmt" == "markdown" ]]; then
             generic_body="${SUMMARY_SECTION_MD}${MESSAGE}"$'\n\n'"${RELEASE_URL}"
