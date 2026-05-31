@@ -182,14 +182,14 @@ build_summary_section_html() {
 HEREDOC
 }
 
-# 改后：用 <blockquote> 包裹，label 加粗，内容用 telegram 模式转换
+# 用 <blockquote> 包裹，label 加粗，内容用 telegram 模式转换
 build_summary_section_telegram() {
     local summary="$1"
     [[ -z "$summary" ]] && return 0
 
     local summary_tg
     summary_tg=$(convert_markdown "telegram" "$summary")
-    printf '<blockquote>%s</blockquote>\n<b> </b>\n\n' "$summary_tg"
+    printf '<blockquote>%s</blockquote>\n&#8203;\n\n' "$summary_tg"
 }
 
 detect_template_kind() {
@@ -282,6 +282,11 @@ case "${STATUS,,}" in
         NOTIFY_TYPE="info"
         ;;
 esac
+
+# VERSION 赋值完成后，TITLE 构建之前插入：
+if [[ "${VERSION}" =~ (alpha|beta|rc|pre|alpa) ]]; then
+    TITLE_EMOJI="🚧"
+fi
 
 # Title
 if [[ -n "${INPUT_TITLE:-}" ]]; then
