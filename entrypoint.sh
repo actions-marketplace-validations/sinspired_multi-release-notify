@@ -147,6 +147,49 @@ else:
 PY
 }
 
+# ─── Changelog 预处理 ────────────────────────────────────────────────────────
+# 用法：preprocess_changelog <mode> <text>
+#   mode=telegram : 移除 commit id + 将 t.me Markdown 链接转为 @username
+#   mode=其他     : 仅移除 commit id
+preprocess_changelog() {
+    local mode="$1"
+    local text="$2"
+
+    MODE="$mode" TEXT="$text" python3 - <<'PY'
+import os
+import re
+
+mode = os.environ.get("MODE", "")
+text = os.environ.get("TEXT", "")
+
+# 移除 commit id：匹配行内 40 位十六进制 + ': '
+# 例：`* defddc5891cba6ce8406030dc4b1acaf5a5de637: fix: 描述` → `* fix: 描述`
+text = re.sub(r'(?m)\b[0-9a-f]{40}:\s*', '', text)
+
+if mode == "telegram":
+    # 1. Markdown 标题：去掉 # 前缀，保留文字
+    #    ### 🐛 Bug 修复  →  🐛 Bug 修复
+    text = re.sub(r'(?m)^#{1,6}\s+', '', text)
+
+    # 2. **bold** / __bold__：去掉标记，保留文字
+    text = re.sub(r'\*\*(.*?)\*\*', r'\1', text)
+    text = re.sub(r'__(.*?)__',     r'\1', text)
+
+    # 3. t.me 链接优先处理：[text](https://t.me/xxx) → @xxx
+    text = re.sub(
+        r'\[[^\]]*\]\(https://t\.me/([^)]+)\)',
+        r'@\1',
+        text
+    )
+
+    # 4. 其余普通 Markdown 链接：只保留显示文字，丢弃 URL
+    #    [v2.5.0...v2.5.1](https://github.com/...) → v2.5.0...v2.5.1
+    text = re.sub(r'\[([^\]]*)\]\([^)]*\)', r'\1', text)
+
+print(text, end="")
+PY
+}
+
 sanitize_telegram_html() {
     local text="$1"
 
@@ -389,20 +432,27 @@ render_template() {
 
     case "$template_kind" in
         html_doc)
-            processed_msg=$(convert_markdown "html" "$MESSAGE")
+            # Email：移除 commit id 后转 HTML
+            local _msg_clean
+            _msg_clean=$(preprocess_changelog "email" "$MESSAGE")
+            processed_msg=$(convert_markdown "html" "$_msg_clean")
             summary_section="${SUMMARY_SECTION_HTML}"
             ;;
         telegram_html)
-            # Telegram 的 Release Notes 放进 <pre>，这里只保留纯文本并做 HTML 兜底转义
-            processed_msg=$(convert_markdown "plain" "$MESSAGE")
+            # Telegram：移除 commit id + 将 t.me 链接转为 @username，再转纯文本放进 <pre>
+            local _msg_clean
+            _msg_clean=$(preprocess_changelog "telegram" "$MESSAGE")
+            processed_msg=$(convert_markdown "plain" "$_msg_clean")
             summary_section="${SUMMARY_SECTION_TG}"
             ;;
         markdown)
-            processed_msg="$MESSAGE"
+            # Markdown 渠道（bark/ntfy/slack/dingtalk）：移除 commit id
+            processed_msg=$(preprocess_changelog "markdown" "$MESSAGE")
             summary_section="${SUMMARY_SECTION_MD}"
             ;;
         *)
-            processed_msg="$MESSAGE"
+            # 纯文本：移除 commit id
+            processed_msg=$(preprocess_changelog "text" "$MESSAGE")
             summary_section="${SUMMARY_SECTION_TEXT}"
             ;;
     esac
