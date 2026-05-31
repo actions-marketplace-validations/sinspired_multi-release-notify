@@ -281,10 +281,21 @@ esac
 # Title
 if [[ -n "${INPUT_TITLE:-}" ]]; then
     TITLE="${INPUT_TITLE}"
-elif [[ "${NOTIFY_TYPE}" == "failure" ]]; then
-    TITLE="${REPOSITORY} updated to ${VERSION} — failed"
 else
-    TITLE="${REPOSITORY} updated to ${VERSION}"
+    case "${NOTIFY_TYPE}" in
+        success)
+            TITLE="🚀 ${REPOSITORY} updated to ${VERSION}"
+            ;;
+        failure)
+            TITLE="❌ ${REPOSITORY} updated to ${VERSION} — failed"
+            ;;
+        warning)
+            TITLE="⚠️ ${REPOSITORY} updated to ${VERSION} — cancelled"
+            ;;
+        *)
+            TITLE="📢 ${REPOSITORY} updated to ${VERSION}"
+            ;;
+    esac
 fi
 
 # Release notes
