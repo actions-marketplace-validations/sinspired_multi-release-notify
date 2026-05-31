@@ -40,3 +40,4 @@ jobs:
                   telegram_url: ${{ secrets.TELEGRAM_APPRISE_URL }}
                   slack_url: ${{ secrets.SLACK_APPRISE_URL }}
                   ntfy_url: ${{ secrets.NTFY_APPRISE_URL }}
+                  bark_url: ${{ secrets.BARK_APPRISE_URL }}
