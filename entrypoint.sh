@@ -115,26 +115,68 @@ def md_to_html(s: str) -> str:
 
     try:
         import markdown
-        return markdown.markdown(s, extensions=["extra", "codehilite"])
+        # codehilite 可选，不可用时降级到 extra
+        try:
+            return markdown.markdown(s, extensions=["extra", "codehilite"])
+        except Exception:
+            return markdown.markdown(s, extensions=["extra"])
     except Exception:
         # 降级处理
         s = escape_plain(s)
-        s = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", s)
-        s = re.sub(r"__(.*?)__",     r"<b>\1</b>", s)
-        s = re.sub(r"\*(.*?)\*",     r"<i>\1</i>", s)
-        s = re.sub(r"`([^`]+)`",      r"<code>\1</code>", s)
 
+        # 代码块（优先处理，避免内部 * 被误匹配）
         def codeblock(m):
-            code = (
-                m.group(1)
-                .replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-            )
-            return f"<pre>{code}</pre>"
+            code = m.group(1).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            return f"<pre><code>{code}</code></pre>"
+        s = re.sub(r"```[a-zA-Z0-9]*\n(.*?)\n```", codeblock, s, flags=re.DOTALL)
 
-        s = re.sub(r"```(.*?)```", codeblock, s, flags=re.DOTALL)
-        return f"<p>{s}</p>"
+        # 标题
+        s = re.sub(r"(?m)^#{1,6}\s+(.*?)$", r"<b>\1</b>", s)
+
+        # 列表（在 bold/italic 之前处理，避免 * 被误识别为斜体）
+        def wrap_lists(text):
+            lines = text.split("\n")
+            out, in_list = [], False
+            for line in lines:
+                m = re.match(r"^(\s*)[-*]\s+(.*)", line)
+                if m:
+                    if not in_list:
+                        out.append("<ul>")
+                        in_list = True
+                    out.append(f"<li>{m.group(2)}</li>")
+                else:
+                    if in_list:
+                        out.append("</ul>")
+                        in_list = False
+                    out.append(line)
+            if in_list:
+                out.append("</ul>")
+            return "\n".join(out)
+        s = wrap_lists(s)
+
+        # bold / italic（italic 限定不紧邻另一个 *）
+        s = re.sub(r"\*\*(.*?)\*\*",                       r"<b>\1</b>", s)
+        s = re.sub(r"__(.*?)__",                            r"<b>\1</b>", s)
+        s = re.sub(r"(?<!\*)\*(?!\*)(.*?)(?<!\*)\*(?!\*)", r"<i>\1</i>", s)
+
+        # 行内代码
+        s = re.sub(r"`([^`]+)`", r"<code>\1</code>", s)
+
+        # 链接
+        s = re.sub(r"\[([^\]]*)\]\(([^)]*)\)", r'<a href="\2">\1</a>', s)
+
+        # 段落换行（<ul> 行之间不加 <br>）
+        lines = s.split("\n")
+        out = []
+        for line in lines:
+            stripped = line.strip()
+            if stripped in ("<ul>", "</ul>") or stripped.startswith("<li>"):
+                out.append(line)
+            elif stripped == "":
+                out.append("")
+            else:
+                out.append(line + "<br>")
+        return "\n".join(out)
 
 if mode == "telegram":
     print(md_to_telegram(text), end="")
@@ -168,23 +210,26 @@ text = re.sub(r'(?m)\b[0-9a-f]{40}:\s*', '', text)
 
 if mode == "telegram":
     # 1. Markdown 标题：去掉 # 前缀，保留文字
-    #    ### 🐛 Bug 修复  →  🐛 Bug 修复
     text = re.sub(r'(?m)^#{1,6}\s+', '', text)
 
     # 2. **bold** / __bold__：去掉标记，保留文字
     text = re.sub(r'\*\*(.*?)\*\*', r'\1', text)
     text = re.sub(r'__(.*?)__',     r'\1', text)
 
-    # 3. t.me 链接优先处理：[text](https://t.me/xxx) → @xxx
+    # 3. 列表标记：去掉行首 * / - 保留文字（保留缩进）
+    #    * fix: 描述  →  fix: 描述
+    text = re.sub(r'(?m)^(\s*)[-*]\s+', r'\1', text)
+
+    # 4. t.me 链接优先转为 @username
     text = re.sub(
         r'\[[^\]]*\]\(https://t\.me/([^)]+)\)',
         r'@\1',
         text
     )
 
-    # 4. 其余普通 Markdown 链接：只保留显示文字，丢弃 URL
-    #    [v2.5.0...v2.5.1](https://github.com/...) → v2.5.0...v2.5.1
-    text = re.sub(r'\[([^\]]*)\]\([^)]*\)', r'\1', text)
+    # 5. 其余普通链接：保留显示文字并附上 URL
+    #    [v2.5.0...v2.5.1](https://github.com/...) → v2.5.0...v2.5.1 https://github.com/...
+    text = re.sub(r'\[([^\]]*)\]\(([^)]*)\)', r'\1 \2', text)
 
 print(text, end="")
 PY
