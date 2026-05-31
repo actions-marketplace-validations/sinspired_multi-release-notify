@@ -113,6 +113,10 @@ def md_to_html(s: str) -> str:
     if not is_markdown(s):
         return escape_plain(s).replace("\n", "<br>")
 
+    # GitHub release notes 常省略列表前的空行，补上，否则 markdown 库
+    # 会将 "- item" 视为上一段落的延续，全部输出在同一 <p> 内
+    s = re.sub(r'(?m)([^\n])\n([ \t]*[-*] )', r'\1\n\n\2', s)
+
     try:
         import markdown
         # codehilite 可选，不可用时降级到 extra
