@@ -259,6 +259,7 @@ decorate_url() {
         bark*)
             [[ "$url" != *"icon="*  ]] && url="${url}${sep}icon=${encoded_icon}" && sep="&"
             [[ "$url" != *"group="* ]] && url="${url}${sep}group=GitHub_Release"
+            [[ "$url" != *"format="* ]] && url="${url}${sep}format=markdown"
             ;;
         ntfy*)
             [[ "$url" != *"avatar_url="* ]] && url="${url}${sep}avatar_url=${encoded_icon}" && sep="&"
