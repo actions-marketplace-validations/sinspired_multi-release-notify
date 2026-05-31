@@ -182,13 +182,14 @@ build_summary_section_html() {
 HEREDOC
 }
 
+# 改后：用 <blockquote> 包裹，label 加粗，内容用 telegram 模式转换
 build_summary_section_telegram() {
     local summary="$1"
     [[ -z "$summary" ]] && return 0
 
     local summary_tg
     summary_tg=$(convert_markdown "telegram" "$summary")
-    printf '%s\n<b></b>\n\n' "$summary_tg"
+    printf '<b>📋 Summary</b>\n<blockquote>%s</blockquote>\n\n' "$summary_tg"
 }
 
 detect_template_kind() {
