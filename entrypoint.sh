@@ -42,11 +42,13 @@ convert_markdown() {
     local target_channel="$1"
     local text="$2"
 
-    python3 -c '
-import sys, re
+    TARGET_CHANNEL="$target_channel" TEXT="$text" python3 - <<'PY'
+import os
+import re
+import sys
 
-target = sys.argv[1]
-text = sys.stdin.read()
+target = os.environ.get("TARGET_CHANNEL", "")
+text = os.environ.get("TEXT", "")
 
 # 检测输入是否含有 Markdown 语法
 is_md = bool(re.search(
@@ -80,7 +82,6 @@ if target == "Telegram":
     text = re.sub(r"^\s*[-*]\s+(.*)$", r"• \1", text, flags=re.MULTILINE)
 
     # [text](url) → <a href="url">text</a>
-    # ↓ 修复：改用单引号原始字符串，消除 \" 在 re.sub 替换串中的转义歧义
     text = re.sub(
         r"\[([^\]]*?)\]\((.*?)\)",
         r'<a href="\2">\1</a>',
@@ -114,10 +115,10 @@ except ImportError:
     # 降级处理：手动转换常用语法
     text = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", text)
     text = re.sub(r"\*(.*?)\*",     r"<i>\1</i>", text)
-    text = re.sub(r"`([^`]+)`",     r"<code>\1</code>", text)
-    text = re.sub(r"```([^`]+)```", r"<pre>\1</pre>", text, flags=re.DOTALL)
+    text = re.sub(r"`([^`]+)`",      r"<code>\1</code>", text)
+    text = re.sub(r"```([^`]+)```",  r"<pre>\1</pre>", text, flags=re.DOTALL)
     print(f"<p>{text}</p>", end="")
-' "$target_channel" <<< "$text"
+PY
 }
 
 # Telegram HTML 兜底清理
