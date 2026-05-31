@@ -37,6 +37,73 @@ if [[ -z "${URLS_INPUT}" \
     exit 1
 fi
 
+# ─── Markdown convert ─────────────────────────────────────────────────────────
+convert_markdown() {
+local target_channel="$1"
+local text="$2"
+
+python3 -c '
+import sys, re
+
+target = sys.argv[1]
+text = sys.stdin.read()
+
+is_md = bool(re.search(
+    r"(\*\*.*?\*\*|__.*?__|#+\s|-\s|\*\s|`.*?`|\[.*?\]\(.*?\))",
+    text
+))
+
+if target == "Telegram":
+    if not is_md:
+        print(text, end="")
+        sys.exit(0)
+
+    text = re.sub(r"^(#{1,6})\s+(.*)$", r"<b>\2</b>", text, flags=re.MULTILINE)
+
+    text = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", text)
+    text = re.sub(r"__(.*?)__", r"<b>\1</b>", text)
+
+    text = re.sub(
+        r"(?<!\*)\*(?!\*)(.*?)(?<!\*)\*(?!\*)",
+        r"<i>\1</i>",
+        text
+    )
+
+    text = re.sub(r"^\s*-\s+(.*)$", r"• \1", text, flags=re.MULTILINE)
+    text = re.sub(r"^\s*\*\s+(.*)$", r"• \1", text, flags=re.MULTILINE)
+
+    text = re.sub(
+        r"\[(.*?)\]\((.*?)\)",
+        r"<a href=\"\2\">\1</a>",
+        text
+    )
+
+    text = re.sub(
+        r"```[a-zA-Z0-9]*\n(.*?)\n```",
+        r"\1",
+        text,
+        flags=re.DOTALL
+    )
+
+    print(text, end="")
+    sys.exit(0)
+
+if not is_md:
+    print(text.replace("\n", "<br>"), end="")
+    sys.exit(0)
+
+try:
+    import markdown
+    print(markdown.markdown(text, extensions=["extra", "codehilite"]), end="")
+except ImportError:
+    text = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", text)
+    text = re.sub(r"\*(.*?)\*", r"<i>\1</i>", text)
+    text = re.sub(r"`([^`]+)`", r"<code>\1</code>", text)
+    text = re.sub(r"```([^`]+)```", r"<pre>\1</pre>", text, flags=re.DOTALL)
+    print(f"<p>{text}</p>", end="")
+' "$target_channel" <<< "$text"
+}
+
 # ─── Summary Section（按渠道格式预渲染，为空时各变量均为空字符串）────────────────
 SUMMARY_SECTION_HTML=""
 SUMMARY_SECTION_MD=""
@@ -208,73 +275,6 @@ case "$scheme" in
 esac
 
 echo "$url"
-}
-
-# ─── Markdown convert ─────────────────────────────────────────────────────────
-convert_markdown() {
-local target_channel="$1"
-local text="$2"
-
-python3 -c '
-import sys, re
-
-target = sys.argv[1]
-text = sys.stdin.read()
-
-is_md = bool(re.search(
-    r"(\*\*.*?\*\*|__.*?__|#+\s|-\s|\*\s|`.*?`|\[.*?\]\(.*?\))",
-    text
-))
-
-if target == "Telegram":
-    if not is_md:
-        print(text, end="")
-        sys.exit(0)
-
-    text = re.sub(r"^(#{1,6})\s+(.*)$", r"<b>\2</b>", text, flags=re.MULTILINE)
-
-    text = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", text)
-    text = re.sub(r"__(.*?)__", r"<b>\1</b>", text)
-
-    text = re.sub(
-        r"(?<!\*)\*(?!\*)(.*?)(?<!\*)\*(?!\*)",
-        r"<i>\1</i>",
-        text
-    )
-
-    text = re.sub(r"^\s*-\s+(.*)$", r"• \1", text, flags=re.MULTILINE)
-    text = re.sub(r"^\s*\*\s+(.*)$", r"• \1", text, flags=re.MULTILINE)
-
-    text = re.sub(
-        r"\[(.*?)\]\((.*?)\)",
-        r"<a href=\"\2\">\1</a>",
-        text
-    )
-
-    text = re.sub(
-        r"```[a-zA-Z0-9]*\n(.*?)\n```",
-        r"\1",
-        text,
-        flags=re.DOTALL
-    )
-
-    print(text, end="")
-    sys.exit(0)
-
-if not is_md:
-    print(text.replace("\n", "<br>"), end="")
-    sys.exit(0)
-
-try:
-    import markdown
-    print(markdown.markdown(text, extensions=["extra", "codehilite"]), end="")
-except ImportError:
-    text = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", text)
-    text = re.sub(r"\*(.*?)\*", r"<i>\1</i>", text)
-    text = re.sub(r"`([^`]+)`", r"<code>\1</code>", text)
-    text = re.sub(r"```([^`]+)```", r"<pre>\1</pre>", text, flags=re.DOTALL)
-    print(f"<p>{text}</p>", end="")
-' "$target_channel" <<< "$text"
 }
 
 # ─── Template render ──────────────────────────────────────────────────────────
