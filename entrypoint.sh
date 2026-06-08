@@ -231,10 +231,17 @@ if mode == "telegram":
         text
     )
 
-    # 5. 其余普通链接：丢弃 URL，只保留显示文字
-    #    Telegram <pre> 不支持内嵌链接，保留 URL 只会显示为噪音
-    #    [`1847dd0`](https://github.com/.../commit/1847dd0...) → `1847dd0`
-   text = re.sub(r'\[([^\]]*)\]\(([^)]*)\)', r'\1', text)
+    # 5. 移除 cliff commit id 链接（含外层括号）
+    # Fix bug ([`1847dd0`](https://github.com/.../commit/abc...)) → Fix bug
+    text = re.sub(
+        r'\s*\(\[`[0-9a-f]{4,40}`\]\(https://[^)]+/commit/[^)]+\)\)',
+        '',
+        text
+    )
+
+    # 6. 其余普通链接：保留显示文字并附上 URL
+    #    [v2.5.0...v2.5.1](https://github.com/...) → v2.5.0...v2.5.1 https://github.com/...
+    text = re.sub(r'\[([^\]]*)\]\(([^)]*)\)', r'\1 \2', text)
 
 print(text, end="")
 PY
