@@ -239,9 +239,34 @@ if mode == "telegram":
         text
     )
 
+    # 移除 commit id
+    text = re.sub(r'(?m)\b[0-9a-f]{40}:\s*', '', text)
+
+    # ── 快捷下载区块：保留标题和说明文字，移除 badge/链接/HTML ──
+
+    # 1. Markdown 图片链接（badge）：整行只有 ![...](...)  → 删整行
+    #    多个 badge 挤在同一行也一并清掉
+    text = re.sub(r'(?m)^[ \t]*(?:!\[[^\]]*\]\([^)]*\)[ \t]*)+\n?', '', text)
+
+    # 2. 剩余行内普通 Markdown 链接（commit id 链接等）：只删标记，保留显示文字
+    #    [text](url) → text
+    text = re.sub(r'\[([^\]]*)\]\([^)]*\)', r'\1', text)
+
+    # 3. HTML 块元素（<div>/<table>/<thead>/<tbody>/<tr>/<th>/<td>/<a> 等）
+    #    匹配从开标签到对应闭标签的整块，含跨行内容
+    text = re.sub(r'(?ms)<(div|table|thead|tbody|tr|th|td|a|br|img)[^>]*>.*?</\1>', '', text)
+    # 自闭合标签（<br/> <img/>）
+    text = re.sub(r'<[a-zA-Z][^>]*/>', '', text)
+
+    # 4. 清理多余空行（连续 3 行以上空行压缩为 2 行）
+    text = re.sub(r'\n{3,}', '\n\n', text)
+
     # 6. 其余普通链接：保留显示文字并附上 URL
     #    [v2.5.0...v2.5.1](https://github.com/...) → v2.5.0...v2.5.1 https://github.com/...
     text = re.sub(r'\[([^\]]*)\]\(([^)]*)\)', r'\1 \2', text)
+
+    # 兜底：清理所有残留 HTML 标签
+    text = re.sub(r'<[^>]+>', '', text)
 
 print(text, end="")
 PY
