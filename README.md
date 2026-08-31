@@ -149,7 +149,7 @@ Template paths are relative to the repository root.
 |---|---|
 | `email_template` | HTML |
 | `telegram_template` | Telegram HTML |
-| `bark_template` | Plain text |
+| `bark_template` | Markdown |
 | `ntfy_template` | Markdown |
 | `slack_template` | Markdown |
 | `dingtalk_template` | Markdown |
